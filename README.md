@@ -1,119 +1,71 @@
 # 🎓 Vault AI - Exam Paper Structurer
 
-A Next.js application that transforms exam PDF documents into structured, searchable JSON data using Mistral AI's OCR and language models.
+A Next.js app that turns public exam PDFs into structured JSON with two pipelines: **Mistral** (OCR + chat) and **Gemini** (file upload + JSON schema). The UI toggles models and swaps branding to match.
 
 ## ✨ Features
-
-- **PDF to Structured JSON**: Convert exam papers from PDF format to structured JSON
-- **AI-Powered OCR**: Leverages Mistral OCR for accurate text extraction
-- **Intelligent Parsing**: Uses Mistral's language model to understand exam structure
-- **Beautiful UI**: Clean, responsive interface built with React and Tailwind CSS
-- **Real-time Processing**: Process PDFs in under 60 seconds
-- **Detailed Breakdown**: Extract sections, questions, sub-questions, and marks
-- **Multiple Views**: View raw markdown, structured JSON, and rendered paper format
+- Dual models: Mistral (OCR URL → markdown → chat) and Gemini (file upload → JSON schema), same output schema.
+- 60s budget (`maxDuration = 60`) on both routes for serverless limits.
+- Clean UI with per-model gradients, status banners, rendered paper, JSON view; Mistral also shows OCR markdown + page count.
 
 ## 🚀 Getting Started
-
-### Prerequisites
-
-- Node.js 18+ installed
-- A Mistral API key ([Get one here](https://console.mistral.ai/))
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd vault-ai
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Set up environment variables**
-   
-   Create a `.env.local` file in the root directory:
-   ```env
-   MISTRAL_API_KEY=your_mistral_api_key_here
-   ```
-
-4. **Run the development server**
-   ```bash
-   npm run dev
-   ```
-
-5. **Open your browser**
-   
-   Navigate to [http://localhost:3000](http://localhost:3000)
+- Prereqs: Node.js 18+, keys for both providers.
+- Install deps: `npm install`.
+- Env (.env.local):
+  ```env
+  MISTRAL_API_KEY=your_mistral_key
+  GEMINI_API_KEY=your_gemini_key
+  ```
+- Run dev: `npm run dev` and open http://localhost:3000.
 
 ## 📖 Usage
-
-1. Paste a **public PDF URL** of an exam paper into the input field
-2. Click **Process** to start the OCR and parsing
-3. Wait up to 60 seconds for processing
-4. View the results in three formats:
-   - **Rendered Paper**: A clean, structured view of the exam
-   - **OCR Markdown**: Raw markdown output from the OCR
-   - **Structured JSON**: Complete JSON data structure
+1) Paste a **public PDF URL**. 2) Choose **Mistral** or **Gemini** (default Mistral). 3) Click **Process** (up to 60s). 4) Review the rendered paper + JSON; Mistral responses also include markdown and page count.
 
 ## 🏗️ Project Structure
-
 ```
 vault-ai/
 ├── app/
 │   ├── api/
-│   │   └── process/
-│   │       └── route.js          # Main API endpoint for PDF processing
-│   ├── globals.css               # Global styles
-│   ├── layout.js                 # Root layout with fonts
-│   └── page.js                   # Main page component
+│   │   ├── process/route.js      # Mistral: OCR URL -> markdown -> chat JSON
+│   │   └── parse-pdf/route.js    # Gemini: fetch -> /tmp -> upload -> JSON schema
+│   ├── globals.css
+│   ├── layout.js
+│   └── page.js                   # UI with model toggle + theming
 ├── lib/
-│   └── exam-schema.js            # Zod schema for exam validation
-├── public/                       # Static assets
-├── .env.local                    # Environment variables (create this)
-├── next.config.mjs               # Next.js configuration
-├── package.json                  # Dependencies and scripts
-└── tailwind.config.js            # Tailwind CSS configuration
+│   └── exam-schema.js            # Shared Zod schema for both models
+├── public/
+├── .env.local
+├── next.config.mjs
+├── package.json
+└── postcss.config.mjs
 ```
 
-## 🔧 Technologies Used
+## 🔧 Technologies
+- Next.js 16.2, React 19, Tailwind 4
+- Mistral SDK (@mistralai/mistralai)
+- Gemini SDK (@google/generative-ai)
+- Zod for validation
 
-- **[Next.js 16.2](https://nextjs.org/)**: React framework for production
-- **[React 19](https://react.dev/)**: UI library
-- **[Mistral AI](https://mistral.ai/)**: OCR and language model APIs
-- **[Zod](https://zod.dev/)**: TypeScript-first schema validation
-- **[Tailwind CSS 4](https://tailwindcss.com/)**: Utility-first CSS framework
-
-## 📊 Data Structure
-
-The application extracts the following structure from exam papers:
-
+## 📊 Data Structure (shared)
 ```json
 {
-  "exam_title": "String",
-  "subject": "String",
-  "total_marks": "Number or null",
-  "duration": "String or null",
-  "instructions": ["String"],
+  "exam_title": "string",
+  "subject": "string",
+  "total_marks": "number|null",
+  "duration": "string|null",
+  "instructions": ["string"],
   "sections": [
     {
-      "section_label": "e.g., Section A",
-      "section_title": "String or null",
-      "section_marks": "Number or null",
-      "section_instructions": "String or null",
+      "section_label": "Section A",
+      "section_title": "string|null",
+      "section_marks": "number|null",
+      "section_instructions": "string|null",
       "questions": [
         {
-          "question_number": "e.g., 1 or 1a",
-          "question_text": "Full question text",
-          "marks": "Number or null",
+          "question_number": "1 or 1a",
+          "question_text": "string",
+          "marks": "number|null",
           "sub_questions": [
-            {
-              "part": "e.g., a, b, i, ii",
-              "text": "String",
-              "marks": "Number or null"
-            }
+            { "part": "a", "text": "string", "marks": "number|null" }
           ]
         }
       ]
@@ -122,92 +74,39 @@ The application extracts the following structure from exam papers:
 }
 ```
 
-## 🛠️ Available Scripts
+## 🚦 API Endpoints
+- **POST `/api/process`** (Mistral)
+  - Body: `{ "pdfUrl": "https://.../exam.pdf" }`
+  - Flow: Mistral OCR on URL → markdown stitch → chat (`mistral-small-latest`) → JSON parse → `coerceExamJson` → returns `{ success, pages_processed, raw_markdown, structured }`.
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm start` - Start production server
-- `npm run lint` - Run ESLint
+- **POST `/api/parse-pdf`** (Gemini)
+  - Body: `{ "pdfUrl": "https://.../exam.pdf" }`
+  - Flow: fetch PDF → write to `/tmp` → `GoogleAIFileManager.uploadFile` → `gemini-2.5-flash` with `responseSchema` → JSON parse → `coerceExamJson` → returns `{ success, structured }`.
+  - Cleanup: `finally` removes the `/tmp` file and `fileManager.deleteFile` on the Gemini upload.
+
+UI picks the endpoint based on the toggle and swaps palette (orange for Mistral, blue/purple gradient for Gemini).
+
+## 🎨 Implementation Notes (per model)
+- **Mistral mode**: Uses public PDF URL directly; `mistral-ocr-latest` → joined markdown → `mistral-small-latest` with `responseFormat: json_object`; validates with `exam-schema`; includes markdown + pages in the response.
+- **Gemini mode**: Downloads to RAM → saves to `/tmp` → uploads via `GoogleAIFileManager` (server import) → `gemini-2.5-flash` with `responseSchema` mirroring the Zod schema → validates with `exam-schema`; returns structured JSON only; always cleans temp + remote files in `finally`.
+
+## 🔌 Bring this into your project (direct steps)
+1) `npm install @mistralai/mistralai @google/generative-ai zod`.
+2) Copy a shared exam schema (see `lib/exam-schema.js`).
+3) Mistral path: OCR the URL with `mistral-ocr-latest`, stitch markdown, run chat with `responseFormat: json_object`, JSON-parse, validate.
+4) Gemini path: fetch PDF, write to `/tmp`, `uploadFile` via `GoogleAIFileManager` (server import), call `generateContent` with `responseSchema`, JSON-parse, validate, and clean temp + remote files in `finally`.
+5) Expose both as separate Next.js routes; add a frontend toggle to call the right endpoint.
 
 ## ⚙️ Configuration
-
-The application uses the following environment variables:
-
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `MISTRAL_API_KEY` | Your Mistral API key for OCR and chat | Yes |
-
-## 🎨 Features in Detail
-
-### OCR Processing
-- Uses `mistral-ocr-latest` model for document text extraction
-- Processes multi-page PDFs
-- Generates clean markdown output
-
-### Intelligent Parsing
-- Uses `mistral-small-latest` model for structured data extraction
-- Validates output using Zod schemas
-- Handles complex exam structures with sections and sub-questions
-
-### UI Components
-- Responsive design that works on all devices
-- Real-time status updates during processing
-- Expandable sections for detailed views
-- Error handling with user-friendly messages
-
-## 🚦 API Endpoints
-
-### POST `/api/process`
-
-Processes a PDF URL and returns structured exam data.
-
-**Request Body:**
-```json
-{
-  "pdfUrl": "https://example.com/exam.pdf"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "pages_processed": 5,
-  "raw_markdown": "...",
-  "structured": { /* exam object */ }
-}
-```
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📝 License
-
-This project is private and not licensed for public use.
+| `MISTRAL_API_KEY` | Mistral key for OCR + chat | Yes (Mistral mode) |
+| `GEMINI_API_KEY`  | Gemini key for file upload + JSON | Yes (Gemini mode) |
 
 ## 🐛 Known Limitations
-
-- Only processes publicly accessible PDF URLs
-- Maximum processing time: 60 seconds
-- Requires valid Mistral API key
-- OCR accuracy depends on PDF quality
-
-## 🔮 Future Enhancements
-
-- [ ] Support for local PDF file uploads
-- [ ] Multiple language support
-- [ ] Export to various formats (Word, Excel)
-- [ ] Batch processing for multiple PDFs
-- [ ] Enhanced error recovery
-- [ ] Answer key extraction
-
-## 🚀 Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme).
-
-Check out the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Requires public PDF URLs.
+- 60s cap; very large PDFs may time out.
+- OCR quality depends on source PDF.
 
 ---
-
-Built with ❤️ using Next.js and Mistral AI
+Built with ❤️ using Next.js, Mistral, and Gemini.
